@@ -51,14 +51,49 @@
     white-space: nowrap;
   }
 
-  .group { margin-bottom: 18px; }
-  .group-title {
+  /* --- group --- */
+  .group { margin-bottom: 14px; }
+  .group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 6px 2px;
+  }
+  .group-toggle {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    padding: 6px 2px;
     font-size: 13px;
     font-weight: 700;
     color: var(--text-dim);
-    margin: 0 0 6px 4px;
     letter-spacing: 0.03em;
+    cursor: pointer;
+    text-align: left;
   }
+  .group-toggle .chev {
+    display: inline-block;
+    transition: transform 0.15s;
+    font-size: 11px;
+  }
+  .group-toggle.collapsed .chev { transform: rotate(-90deg); }
+  .group-toggle .gcount { font-weight: 400; }
+  .rand-btn {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 13px;
+    color: var(--blue);
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .rand-btn:active { background: #eaf1fc; }
+
   .group-body {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -95,6 +130,20 @@
     cursor: pointer;
   }
   .item .menu-btn:active { background: #f0f4fb; }
+
+  .show-more {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    background: #fafbfc;
+    border: none;
+    border-top: 1px solid var(--border);
+    color: var(--blue);
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .show-more:active { background: #f0f4fb; }
 
   .item-actions {
     padding: 10px 14px 14px;
@@ -239,22 +288,29 @@
   <button id="export-btn" type="button">CSVを書き出す</button>
   <button id="import-btn" type="button">CSVを読み込む</button>
 </div>
-<input type="file" id="file-input" accept=".csv,text/csv,text/plain">
+<input type="file" id="file-input" accept=".csv,.txt,text/csv,text/plain">
 <div id="status"></div>
 
 <script>
 const STORAGE_KEY = 'link-book-v1';
 const SORT_KEY = 'link-book-sort';
-const GROUP_RECENT_KEY = 'link-book-group-recent'; // {groupName: lastUsedTimestamp}
+const GROUP_RECENT_KEY = 'link-book-group-recent';
+const COLLAPSED_KEY = 'link-book-collapsed';   // {groupName: true}
+const LAST_RAND_KEY = 'link-book-last-rand';   // {groupName: entryId}
 const NEW_GROUP_VALUE = '__new__';
+const PREVIEW_COUNT = 5; // items shown before "すべて表示"
+
 const SORT_MODES = [
   { id: 'manual', label: '並び順: 手動' },
   { id: 'title-asc', label: '並び順: タイトル ↑' },
   { id: 'title-desc', label: '並び順: タイトル ↓' },
 ];
 
-let entries = []; // {id, group, title, url, order}
-let groupRecent = {}; // group -> timestamp
+let entries = [];
+let groupRecent = {};
+let collapsed = {};
+let lastRand = {};
+let expandedGroups = new Set(); // groups showing all items this session
 let sortMode = 'title-asc';
 let editingId = null;
 
@@ -269,14 +325,19 @@ const exportBtn = $('export-btn'), importBtn = $('import-btn'), fileInput = $('f
 function setStatus(msg, isError) {
   statusEl.textContent = msg;
   statusEl.style.color = isError ? 'var(--danger)' : 'var(--text-dim)';
-  if (msg) setTimeout(() => { if (statusEl.textContent === msg) statusEl.textContent = ''; }, 3000);
+  if (msg) setTimeout(() => { if (statusEl.textContent === msg) statusEl.textContent = ''; }, 3500);
+}
+
+function loadJson(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) || fallback; }
+  catch (e) { return fallback; }
 }
 
 function load() {
-  try { entries = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-  catch (e) { entries = []; }
-  try { groupRecent = JSON.parse(localStorage.getItem(GROUP_RECENT_KEY)) || {}; }
-  catch (e) { groupRecent = {}; }
+  entries = loadJson(STORAGE_KEY, []);
+  groupRecent = loadJson(GROUP_RECENT_KEY, {});
+  collapsed = loadJson(COLLAPSED_KEY, {});
+  lastRand = loadJson(LAST_RAND_KEY, {});
   sortMode = localStorage.getItem(SORT_KEY) || 'title-asc';
   render();
 }
@@ -285,6 +346,8 @@ function save() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
     localStorage.setItem(GROUP_RECENT_KEY, JSON.stringify(groupRecent));
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify(collapsed));
+    localStorage.setItem(LAST_RAND_KEY, JSON.stringify(lastRand));
   }
   catch (e) { setStatus('保存に失敗しました', true); }
 }
@@ -296,10 +359,8 @@ function escapeHtml(s) {
 }
 
 function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
-
 function touchGroup(g) { groupRecent[g] = Date.now(); }
 
-/* Groups ordered by most recently used first, then alphabetical */
 function orderedGroups() {
   const all = [...new Set(entries.map(e => e.group || '未分類'))];
   return all.sort((a, b) => {
@@ -313,26 +374,20 @@ function rebuildGroupSelect(preserveValue) {
   const groups = orderedGroups();
   const prev = preserveValue !== undefined ? preserveValue : groupSelect.value;
   groupSelect.innerHTML = '';
-
   groups.forEach(g => {
     const opt = document.createElement('option');
     opt.value = g;
     opt.textContent = g;
     groupSelect.appendChild(opt);
   });
-
   const newOpt = document.createElement('option');
   newOpt.value = NEW_GROUP_VALUE;
   newOpt.textContent = '＋ 新しいグループ…';
   groupSelect.appendChild(newOpt);
 
-  if (prev && (groups.includes(prev) || prev === NEW_GROUP_VALUE)) {
-    groupSelect.value = prev;
-  } else if (groups.length > 0) {
-    groupSelect.value = groups[0]; // most recent
-  } else {
-    groupSelect.value = NEW_GROUP_VALUE;
-  }
+  if (prev && (groups.includes(prev) || prev === NEW_GROUP_VALUE)) groupSelect.value = prev;
+  else if (groups.length > 0) groupSelect.value = groups[0];
+  else groupSelect.value = NEW_GROUP_VALUE;
   updateNewGroupVisibility();
 }
 
@@ -344,6 +399,22 @@ groupSelect.addEventListener('change', () => {
   updateNewGroupVisibility();
   if (groupSelect.value === NEW_GROUP_VALUE) newGroupInput.focus();
 });
+
+/* ---------- random pick ---------- */
+function pickRandom(groupName, items) {
+  if (items.length === 0) return;
+  let candidates = items;
+  // avoid repeating the immediately previous pick when possible
+  if (items.length > 1 && lastRand[groupName]) {
+    const filtered = items.filter(e => e.id !== lastRand[groupName]);
+    if (filtered.length > 0) candidates = filtered;
+  }
+  const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+  lastRand[groupName] = chosen.id;
+  save();
+  setStatus('🎲 「' + chosen.title + '」を開きます');
+  window.open(chosen.url, '_blank', 'noopener');
+}
 
 /* ---------- render ---------- */
 function sortItems(items) {
@@ -373,24 +444,64 @@ function render() {
   emptyEl.style.display = names.length === 0 ? 'block' : 'none';
 
   names.forEach(g => {
+    const allItems = sortItems(byGroup[g]);
+    const isCollapsed = !!collapsed[g] && !q; // searching always expands
+    const isExpanded = expandedGroups.has(g) || !!q;
+
     const wrap = document.createElement('div');
     wrap.className = 'group';
 
-    const title = document.createElement('div');
-    title.className = 'group-title';
-    title.textContent = g;
-    wrap.appendChild(title);
+    // --- head: toggle + random button ---
+    const head = document.createElement('div');
+    head.className = 'group-head';
 
-    const body = document.createElement('div');
-    body.className = 'group-body';
+    const toggle = document.createElement('button');
+    toggle.className = 'group-toggle' + (isCollapsed ? ' collapsed' : '');
+    toggle.innerHTML = '<span class="chev">▼</span> ' + escapeHtml(g) +
+      ' <span class="gcount">(' + allItems.length + ')</span>';
+    toggle.onclick = () => {
+      collapsed[g] = !collapsed[g];
+      save(); render();
+    };
+    head.appendChild(toggle);
 
-    const items = sortItems(byGroup[g]);
-    items.forEach((entry, i) => {
-      body.appendChild(buildItem(entry, items, i));
-      if (editingId === entry.id) body.appendChild(buildActions(entry));
-    });
+    const rand = document.createElement('button');
+    rand.className = 'rand-btn';
+    rand.textContent = '🎲 おまかせ';
+    rand.onclick = () => pickRandom(g, allItems);
+    head.appendChild(rand);
 
-    wrap.appendChild(body);
+    wrap.appendChild(head);
+
+    // --- body ---
+    if (!isCollapsed) {
+      const body = document.createElement('div');
+      body.className = 'group-body';
+
+      const visible = isExpanded ? allItems : allItems.slice(0, PREVIEW_COUNT);
+
+      visible.forEach((entry, i) => {
+        body.appendChild(buildItem(entry, allItems, allItems.indexOf(entry)));
+        if (editingId === entry.id) body.appendChild(buildActions(entry));
+      });
+
+      if (!isExpanded && allItems.length > PREVIEW_COUNT) {
+        const more = document.createElement('button');
+        more.className = 'show-more';
+        more.textContent = 'すべて表示（' + allItems.length + '件）';
+        more.onclick = () => { expandedGroups.add(g); render(); };
+        body.appendChild(more);
+      } else if (isExpanded && !q && allItems.length > PREVIEW_COUNT) {
+        const less = document.createElement('button');
+        less.className = 'show-more';
+        less.textContent = '折りたたむ';
+        less.onclick = () => { expandedGroups.delete(g); render(); };
+        body.appendChild(less);
+      }
+
+      wrap.appendChild(body);
+    }
+
     groupsEl.appendChild(wrap);
   });
 
@@ -413,11 +524,11 @@ function buildItem(entry, siblings, index) {
     ud.className = 'up-down';
     const up = document.createElement('button');
     up.textContent = '▲';
-    up.disabled = index === 0;
+    up.disabled = index <= 0;
     up.onclick = () => swapOrder(entry, siblings[index - 1]);
     const down = document.createElement('button');
     down.textContent = '▼';
-    down.disabled = index === siblings.length - 1;
+    down.disabled = index >= siblings.length - 1;
     down.onclick = () => swapOrder(entry, siblings[index + 1]);
     ud.appendChild(up);
     ud.appendChild(down);
@@ -442,7 +553,6 @@ function buildActions(entry) {
   t.value = entry.title;
   t.placeholder = 'タイトル';
 
-  // group selector for editing: existing groups (recent first) + new
   const gSel = document.createElement('select');
   const groups = orderedGroups();
   groups.forEach(g => {
@@ -570,17 +680,17 @@ addBtn.addEventListener('click', () => {
   const maxOrder = Math.max(0, ...entries.filter(e => e.group === group).map(e => e.order ?? 0));
   entries.push({ id: newId(), group, title, url, order: maxOrder + 1 });
   touchGroup(group);
+  delete collapsed[group]; // make sure new item is visible
   save(); render();
 
   urlInput.value = '';
   titleInput.value = '';
   newGroupInput.value = '';
   titleStatus.textContent = '';
-  rebuildGroupSelect(group); // keep the just-used group selected
+  rebuildGroupSelect(group);
   setStatus('「' + title + '」を追加しました');
 });
 
-/* ---------- sort toggle ---------- */
 sortBtn.addEventListener('click', () => {
   const i = SORT_MODES.findIndex(m => m.id === sortMode);
   sortMode = SORT_MODES[(i + 1) % SORT_MODES.length].id;
@@ -590,7 +700,7 @@ sortBtn.addEventListener('click', () => {
 
 searchEl.addEventListener('input', render);
 
-/* ---------- CSV ---------- */
+/* ---------- CSV (robust) ---------- */
 function csvEscape(f) {
   const s = String(f);
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -603,39 +713,84 @@ function toCsv() {
   return lines.join('\n');
 }
 
-function parseCsvLine(line) {
-  const out = []; let cur = ''; let inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
+/* Full CSV parser: handles quoted fields containing commas and newlines */
+function parseCsv(text) {
+  // strip BOM
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const rows = [];
+  let row = [], cur = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
     if (inQ) {
-      if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
-      else cur += ch;
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else cur += ch;
     } else {
       if (ch === '"') inQ = true;
-      else if (ch === ',') { out.push(cur); cur = ''; }
+      else if (ch === ',') { row.push(cur); cur = ''; }
+      else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        row.push(cur); cur = '';
+        if (row.some(c => c.trim() !== '')) rows.push(row);
+        row = [];
+      }
       else cur += ch;
     }
   }
-  out.push(cur);
-  return out;
+  row.push(cur);
+  if (row.some(c => c.trim() !== '')) rows.push(row);
+  return rows;
 }
 
+function looksLikeUrl(s) { return /^https?:\/\/\S+/i.test(s.trim()); }
+
+/*
+ Robust import. Accepts:
+ - 4 col: group,title,url,order (with or without header)
+ - 3 col: group,title,url
+ - 2 col: title,url  -> goes to 未分類
+ - column order detection: finds the URL column automatically
+*/
 function fromCsv(text) {
-  const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
-  if (!lines.length) return [];
+  const rows = parseCsv(text);
+  if (!rows.length) return [];
+
+  // header detection: first row has no URL anywhere
   let start = 0;
-  const h = parseCsvLine(lines[0]).map(c => c.trim().toLowerCase());
-  if (h[0] === 'group' && h[1] === 'title') start = 1;
+  if (!rows[0].some(c => looksLikeUrl(c))) start = 1;
+
   const res = [];
-  for (let i = start; i < lines.length; i++) {
-    const c = parseCsvLine(lines[i]);
-    if (c.length < 3) continue;
-    const group = c[0].trim() || '未分類';
-    const title = c[1].trim();
-    const url = c[2].trim();
-    const order = parseInt(c[3], 10);
-    if (!title || !url) continue;
-    res.push({ id: newId(), group, title, url, order: isNaN(order) ? 0 : order });
+  for (let i = start; i < rows.length; i++) {
+    const cols = rows[i].map(c => c.trim());
+    const urlIdx = cols.findIndex(c => looksLikeUrl(c));
+    if (urlIdx === -1) continue; // no URL in this row -> skip
+
+    const url = cols[urlIdx];
+    let group = '', title = '', order = NaN;
+
+    if (urlIdx >= 2) {
+      group = cols[0];
+      title = cols[urlIdx - 1];
+    } else if (urlIdx === 1) {
+      title = cols[0];
+    } else { // urlIdx === 0
+      title = cols[1] || url;
+    }
+    // order: first numeric column after the URL
+    for (let k = urlIdx + 1; k < cols.length; k++) {
+      const n = parseInt(cols[k], 10);
+      if (!isNaN(n)) { order = n; break; }
+    }
+
+    if (!title) title = url;
+    res.push({
+      id: newId(),
+      group: group || '未分類',
+      title,
+      url,
+      order: isNaN(order) ? 0 : order
+    });
   }
   return res;
 }
@@ -662,11 +817,17 @@ fileInput.addEventListener('change', () => {
   r.onload = () => {
     try {
       const imported = fromCsv(r.result);
+      if (imported.length === 0) {
+        setStatus('読み込めるリンクが見つかりませんでした。CSVの内容を確認してください', true);
+        fileInput.value = '';
+        return;
+      }
       let added = 0, updated = 0;
       imported.forEach(imp => {
         const i = entries.findIndex(e => e.url === imp.url && e.group === imp.group);
         if (i >= 0) { imp.id = entries[i].id; entries[i] = imp; updated++; }
         else { entries.push(imp); added++; }
+        touchGroup(imp.group);
       });
       save(); render();
       setStatus('読み込み完了：追加 ' + added + ' 件 / 更新 ' + updated + ' 件');
