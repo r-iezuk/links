@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="リンク帳">
+<title>リンク帳</title>
+<style>
+  :root {
+    --bg: #f6f7f8;
+    --panel: #ffffff;
+    --border: #e2e4e8;
+    --text: #1c1e21;
+    --text-dim: #7a808a;
+    --blue: #2469d6;
+    --danger: #c94f45;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+    font-size: 16px;
+  }
+  body { padding: 16px 14px 60px; max-width: 640px; margin: 0 auto; }
+
+  h1 { font-size: 20px; margin: 0 0 14px; }
+
+  .toolbar { display: flex; gap: 8px; margin-bottom: 14px; }
+  #search {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    font-size: 15px;
+    color: var(--text);
+  }
+  #search:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: transparent; }
+  #sort-btn {
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .group { margin-bottom: 18px; }
+  .group-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-dim);
+    margin: 0 0 6px 4px;
+    letter-spacing: 0.03em;
+  }
+  .group-body {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .item { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
+  .item:last-child { border-bottom: none; }
+  .item a {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: 14px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 15px;
+    line-height: 1.4;
+    min-width: 0;
+  }
+  .item a span {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .item a:active { background: #f0f4fb; }
+  .item .menu-btn {
+    background: none;
+    border: none;
+    border-left: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 18px;
+    padding: 0 16px;
+    cursor: pointer;
+  }
+  .item .menu-btn:active { background: #f0f4fb; }
+
+  .item-actions {
+    padding: 10px 14px 14px;
+    background: #fafbfc;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .item-actions input, .item-actions select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font-size: 14px;
+    color: var(--text);
+    background: var(--panel);
+  }
+  .action-row { display: flex; gap: 8px; }
+  .action-row button {
+    flex: 1;
+    padding: 10px 4px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .action-row button.primary { background: var(--blue); color: #fff; border-color: var(--blue); font-weight: 600; }
+  .action-row button.danger { color: var(--danger); }
+
+  #empty {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 14px;
+    padding: 40px 10px;
+    display: none;
+    line-height: 1.7;
+  }
+
+  .add-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .add-panel label { font-size: 12px; color: var(--text-dim); margin-bottom: -4px; }
+  .add-panel input, .add-panel select {
+    width: 100%;
+    padding: 11px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font-size: 15px;
+    color: var(--text);
+    background: var(--panel);
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .add-panel select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a808a' stroke-width='2' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+  .add-panel input:focus, .add-panel select:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: transparent; }
+  #new-group-input { display: none; }
+  #add-btn {
+    padding: 12px;
+    border-radius: 8px;
+    border: none;
+    background: var(--blue);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 4px;
+  }
+  #add-btn:disabled { opacity: 0.5; }
+  #title-status { font-size: 12px; color: var(--text-dim); min-height: 15px; }
+
+  .io-row { display: flex; gap: 8px; }
+  .io-row button {
+    flex: 1;
+    padding: 11px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    font-size: 14px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  #status {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    text-align: center;
+    margin-top: 10px;
+    min-height: 16px;
+  }
+  input[type=file] { display: none; }
+  .up-down { display: flex; flex-direction: column; border-left: 1px solid var(--border); }
+  .up-down button {
+    flex: 1;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 12px;
+    padding: 0 14px;
+    cursor: pointer;
+  }
+  .up-down button:first-child { border-bottom: 1px solid var(--border); }
+  .up-down button:active { background: #f0f4fb; color: var(--blue); }
+</style>
+</head>
+<body>
+
+<h1>リンク帳</h1>
+
+<div class="add-panel">
+  <label>URLを貼り付け（タイトル自動取得）</label>
+  <input type="url" id="url-input" placeholder="https://…" autocomplete="off" inputmode="url">
+  <div id="title-status"></div>
+  <input type="text" id="title-input" placeholder="タイトル" autocomplete="off">
+  <select id="group-select"></select>
+  <input type="text" id="new-group-input" placeholder="新しいグループ名" autocomplete="off">
+  <button id="add-btn" type="button">追加</button>
+</div>
+
+<div class="toolbar">
+  <input type="search" id="search" placeholder="検索…">
+  <button id="sort-btn" type="button"></button>
+</div>
+
+<div id="groups"></div>
+<div id="empty">まだ登録がありません。<br>上の欄にURLを貼り付けて追加してください。</div>
+
+<div class="io-row">
+  <button id="export-btn" type="button">CSVを書き出す</button>
+  <button id="import-btn" type="button">CSVを読み込む</button>
+</div>
+<input type="file" id="file-input" accept=".csv,text/csv,text/plain">
+<div id="status"></div>
+
+<script>
+const STORAGE_KEY = 'link-book-v1';
+const SORT_KEY = 'link-book-sort';
+const GROUP_RECENT_KEY = 'link-book-group-recent'; // {groupName: lastUsedTimestamp}
+const NEW_GROUP_VALUE = '__new__';
+const SORT_MODES = [
+  { id: 'manual', label: '並び順: 手動' },
+  { id: 'title-asc', label: '並び順: タイトル ↑' },
+  { id: 'title-desc', label: '並び順: タイトル ↓' },
+];
+
+let entries = []; // {id, group, title, url, order}
+let groupRecent = {}; // group -> timestamp
+let sortMode = 'title-asc';
+let editingId = null;
+
+const $ = id => document.getElementById(id);
+const groupsEl = $('groups'), emptyEl = $('empty'), searchEl = $('search');
+const urlInput = $('url-input'), titleInput = $('title-input');
+const groupSelect = $('group-select'), newGroupInput = $('new-group-input');
+const addBtn = $('add-btn'), titleStatus = $('title-status'), statusEl = $('status');
+const sortBtn = $('sort-btn');
+const exportBtn = $('export-btn'), importBtn = $('import-btn'), fileInput = $('file-input');
+
+function setStatus(msg, isError) {
+  statusEl.textContent = msg;
+  statusEl.style.color = isError ? 'var(--danger)' : 'var(--text-dim)';
+  if (msg) setTimeout(() => { if (statusEl.textContent === msg) statusEl.textContent = ''; }, 3000);
+}
+
+function load() {
+  try { entries = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+  catch (e) { entries = []; }
+  try { groupRecent = JSON.parse(localStorage.getItem(GROUP_RECENT_KEY)) || {}; }
+  catch (e) { groupRecent = {}; }
+  sortMode = localStorage.getItem(SORT_KEY) || 'title-asc';
+  render();
+}
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    localStorage.setItem(GROUP_RECENT_KEY, JSON.stringify(groupRecent));
+  }
+  catch (e) { setStatus('保存に失敗しました', true); }
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+function touchGroup(g) { groupRecent[g] = Date.now(); }
+
+/* Groups ordered by most recently used first, then alphabetical */
+function orderedGroups() {
+  const all = [...new Set(entries.map(e => e.group || '未分類'))];
+  return all.sort((a, b) => {
+    const ta = groupRecent[a] || 0, tb = groupRecent[b] || 0;
+    if (ta !== tb) return tb - ta;
+    return a.localeCompare(b, 'ja');
+  });
+}
+
+function rebuildGroupSelect(preserveValue) {
+  const groups = orderedGroups();
+  const prev = preserveValue !== undefined ? preserveValue : groupSelect.value;
+  groupSelect.innerHTML = '';
+
+  groups.forEach(g => {
+    const opt = document.createElement('option');
+    opt.value = g;
+    opt.textContent = g;
+    groupSelect.appendChild(opt);
+  });
+
+  const newOpt = document.createElement('option');
+  newOpt.value = NEW_GROUP_VALUE;
+  newOpt.textContent = '＋ 新しいグループ…';
+  groupSelect.appendChild(newOpt);
+
+  if (prev && (groups.includes(prev) || prev === NEW_GROUP_VALUE)) {
+    groupSelect.value = prev;
+  } else if (groups.length > 0) {
+    groupSelect.value = groups[0]; // most recent
+  } else {
+    groupSelect.value = NEW_GROUP_VALUE;
+  }
+  updateNewGroupVisibility();
+}
+
+function updateNewGroupVisibility() {
+  newGroupInput.style.display = groupSelect.value === NEW_GROUP_VALUE ? 'block' : 'none';
+}
+
+groupSelect.addEventListener('change', () => {
+  updateNewGroupVisibility();
+  if (groupSelect.value === NEW_GROUP_VALUE) newGroupInput.focus();
+});
+
+/* ---------- render ---------- */
+function sortItems(items) {
+  const c = [...items];
+  if (sortMode === 'title-asc') c.sort((a, b) => a.title.localeCompare(b.title, 'ja'));
+  else if (sortMode === 'title-desc') c.sort((a, b) => b.title.localeCompare(a.title, 'ja'));
+  else c.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  return c;
+}
+
+function render() {
+  sortBtn.textContent = SORT_MODES.find(m => m.id === sortMode).label;
+
+  const q = searchEl.value.trim().toLowerCase();
+  const filtered = q
+    ? entries.filter(e => e.title.toLowerCase().includes(q) || e.group.toLowerCase().includes(q))
+    : entries;
+
+  const byGroup = {};
+  filtered.forEach(e => {
+    const g = e.group || '未分類';
+    (byGroup[g] = byGroup[g] || []).push(e);
+  });
+  const names = Object.keys(byGroup).sort((a, b) => a.localeCompare(b, 'ja'));
+
+  groupsEl.innerHTML = '';
+  emptyEl.style.display = names.length === 0 ? 'block' : 'none';
+
+  names.forEach(g => {
+    const wrap = document.createElement('div');
+    wrap.className = 'group';
+
+    const title = document.createElement('div');
+    title.className = 'group-title';
+    title.textContent = g;
+    wrap.appendChild(title);
+
+    const body = document.createElement('div');
+    body.className = 'group-body';
+
+    const items = sortItems(byGroup[g]);
+    items.forEach((entry, i) => {
+      body.appendChild(buildItem(entry, items, i));
+      if (editingId === entry.id) body.appendChild(buildActions(entry));
+    });
+
+    wrap.appendChild(body);
+    groupsEl.appendChild(wrap);
+  });
+
+  rebuildGroupSelect();
+}
+
+function buildItem(entry, siblings, index) {
+  const item = document.createElement('div');
+  item.className = 'item';
+
+  const a = document.createElement('a');
+  a.href = entry.url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.innerHTML = '<span>' + escapeHtml(entry.title) + '</span>';
+  item.appendChild(a);
+
+  if (sortMode === 'manual') {
+    const ud = document.createElement('div');
+    ud.className = 'up-down';
+    const up = document.createElement('button');
+    up.textContent = '▲';
+    up.disabled = index === 0;
+    up.onclick = () => swapOrder(entry, siblings[index - 1]);
+    const down = document.createElement('button');
+    down.textContent = '▼';
+    down.disabled = index === siblings.length - 1;
+    down.onclick = () => swapOrder(entry, siblings[index + 1]);
+    ud.appendChild(up);
+    ud.appendChild(down);
+    item.appendChild(ud);
+  }
+
+  const menu = document.createElement('button');
+  menu.className = 'menu-btn';
+  menu.textContent = editingId === entry.id ? '×' : '⋯';
+  menu.setAttribute('aria-label', '編集メニュー');
+  menu.onclick = () => { editingId = editingId === entry.id ? null : entry.id; render(); };
+  item.appendChild(menu);
+
+  return item;
+}
+
+function buildActions(entry) {
+  const box = document.createElement('div');
+  box.className = 'item-actions';
+
+  const t = document.createElement('input');
+  t.value = entry.title;
+  t.placeholder = 'タイトル';
+
+  // group selector for editing: existing groups (recent first) + new
+  const gSel = document.createElement('select');
+  const groups = orderedGroups();
+  groups.forEach(g => {
+    const opt = document.createElement('option');
+    opt.value = g;
+    opt.textContent = g;
+    gSel.appendChild(opt);
+  });
+  const newOpt = document.createElement('option');
+  newOpt.value = NEW_GROUP_VALUE;
+  newOpt.textContent = '＋ 新しいグループ…';
+  gSel.appendChild(newOpt);
+  gSel.value = groups.includes(entry.group) ? entry.group : NEW_GROUP_VALUE;
+
+  const gNew = document.createElement('input');
+  gNew.placeholder = '新しいグループ名';
+  gNew.style.display = gSel.value === NEW_GROUP_VALUE ? 'block' : 'none';
+  if (gSel.value === NEW_GROUP_VALUE) gNew.value = entry.group;
+  gSel.onchange = () => {
+    gNew.style.display = gSel.value === NEW_GROUP_VALUE ? 'block' : 'none';
+    if (gSel.value === NEW_GROUP_VALUE) gNew.focus();
+  };
+
+  const u = document.createElement('input');
+  u.value = entry.url;
+  u.placeholder = 'URL';
+
+  const row = document.createElement('div');
+  row.className = 'action-row';
+
+  const saveB = document.createElement('button');
+  saveB.className = 'primary';
+  saveB.textContent = '保存';
+  saveB.onclick = () => {
+    const group = gSel.value === NEW_GROUP_VALUE ? gNew.value.trim() : gSel.value;
+    if (!t.value.trim() || !u.value.trim()) { setStatus('タイトルとURLは必須です', true); return; }
+    if (!group) { setStatus('グループ名を入力してください', true); return; }
+    entry.title = t.value.trim();
+    entry.group = group;
+    entry.url = u.value.trim();
+    touchGroup(group);
+    editingId = null;
+    save(); render();
+    setStatus('更新しました');
+  };
+
+  const delB = document.createElement('button');
+  delB.className = 'danger';
+  delB.textContent = '削除';
+  delB.onclick = () => {
+    entries = entries.filter(e => e.id !== entry.id);
+    editingId = null;
+    save(); render();
+    setStatus('削除しました');
+  };
+
+  row.appendChild(saveB);
+  row.appendChild(delB);
+  box.appendChild(t);
+  box.appendChild(gSel);
+  box.appendChild(gNew);
+  box.appendChild(u);
+  box.appendChild(row);
+  return box;
+}
+
+function swapOrder(a, b) {
+  if (!b) return;
+  const tmp = a.order ?? 0;
+  a.order = b.order ?? 0;
+  b.order = tmp;
+  save(); render();
+}
+
+/* ---------- title auto-fetch ---------- */
+let fetchTimer = null;
+
+urlInput.addEventListener('input', () => {
+  clearTimeout(fetchTimer);
+  const url = urlInput.value.trim();
+  if (!/^https?:\/\/\S+/.test(url)) { titleStatus.textContent = ''; return; }
+  titleStatus.textContent = 'タイトルを取得中…';
+  fetchTimer = setTimeout(() => fetchTitle(url), 500);
+});
+
+async function fetchTitle(url) {
+  const title = await tryFetchTitle(url);
+  if (urlInput.value.trim() !== url) return;
+  if (title) {
+    titleInput.value = title;
+    titleStatus.textContent = '✓ タイトルを取得しました（編集可）';
+  } else {
+    titleStatus.textContent = '自動取得できないサイトです。タイトルを手動入力してください';
+    titleInput.focus();
+  }
+}
+
+async function tryFetchTitle(url) {
+  if (/youtube\.com|youtu\.be/.test(url)) {
+    try {
+      const r = await fetch('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(url));
+      if (r.ok) { const j = await r.json(); if (j.title) return j.title; }
+    } catch (e) {}
+  }
+  try {
+    const r = await fetch('https://noembed.com/embed?url=' + encodeURIComponent(url));
+    if (r.ok) {
+      const j = await r.json();
+      if (j.title) return j.title;
+      if (j.author_name) return j.author_name + (j.provider_name ? ' / ' + j.provider_name : '');
+    }
+  } catch (e) {}
+  return null;
+}
+
+/* ---------- add ---------- */
+addBtn.addEventListener('click', () => {
+  const url = urlInput.value.trim();
+  const title = titleInput.value.trim();
+  const group = groupSelect.value === NEW_GROUP_VALUE ? newGroupInput.value.trim() : groupSelect.value;
+  if (!url || !/^https?:\/\/\S+/.test(url)) { setStatus('URLを正しく入力してください', true); return; }
+  if (!title) { setStatus('タイトルを入力してください', true); titleInput.focus(); return; }
+  if (!group) { setStatus('グループ名を入力してください', true); newGroupInput.focus(); return; }
+
+  const maxOrder = Math.max(0, ...entries.filter(e => e.group === group).map(e => e.order ?? 0));
+  entries.push({ id: newId(), group, title, url, order: maxOrder + 1 });
+  touchGroup(group);
+  save(); render();
+
+  urlInput.value = '';
+  titleInput.value = '';
+  newGroupInput.value = '';
+  titleStatus.textContent = '';
+  rebuildGroupSelect(group); // keep the just-used group selected
+  setStatus('「' + title + '」を追加しました');
+});
+
+/* ---------- sort toggle ---------- */
+sortBtn.addEventListener('click', () => {
+  const i = SORT_MODES.findIndex(m => m.id === sortMode);
+  sortMode = SORT_MODES[(i + 1) % SORT_MODES.length].id;
+  localStorage.setItem(SORT_KEY, sortMode);
+  render();
+});
+
+searchEl.addEventListener('input', render);
+
+/* ---------- CSV ---------- */
+function csvEscape(f) {
+  const s = String(f);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function toCsv() {
+  const lines = ['group,title,url,order'];
+  [...entries].sort((a, b) => a.group.localeCompare(b.group, 'ja') || (a.order ?? 0) - (b.order ?? 0))
+    .forEach(e => lines.push([csvEscape(e.group), csvEscape(e.title), csvEscape(e.url), e.order ?? 0].join(',')));
+  return lines.join('\n');
+}
+
+function parseCsvLine(line) {
+  const out = []; let cur = ''; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += ch;
+    } else {
+      if (ch === '"') inQ = true;
+      else if (ch === ',') { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function fromCsv(text) {
+  const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
+  if (!lines.length) return [];
+  let start = 0;
+  const h = parseCsvLine(lines[0]).map(c => c.trim().toLowerCase());
+  if (h[0] === 'group' && h[1] === 'title') start = 1;
+  const res = [];
+  for (let i = start; i < lines.length; i++) {
+    const c = parseCsvLine(lines[i]);
+    if (c.length < 3) continue;
+    const group = c[0].trim() || '未分類';
+    const title = c[1].trim();
+    const url = c[2].trim();
+    const order = parseInt(c[3], 10);
+    if (!title || !url) continue;
+    res.push({ id: newId(), group, title, url, order: isNaN(order) ? 0 : order });
+  }
+  return res;
+}
+
+exportBtn.addEventListener('click', () => {
+  const blob = new Blob(['\ufeff' + toCsv()], { type: 'text/csv;charset=utf-8' });
+  const u = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = u;
+  a.download = 'links.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(u), 5000);
+  setStatus('links.csv を書き出しました');
+});
+
+importBtn.addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', () => {
+  const f = fileInput.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const imported = fromCsv(r.result);
+      let added = 0, updated = 0;
+      imported.forEach(imp => {
+        const i = entries.findIndex(e => e.url === imp.url && e.group === imp.group);
+        if (i >= 0) { imp.id = entries[i].id; entries[i] = imp; updated++; }
+        else { entries.push(imp); added++; }
+      });
+      save(); render();
+      setStatus('読み込み完了：追加 ' + added + ' 件 / 更新 ' + updated + ' 件');
+    } catch (e) {
+      setStatus('CSVの読み込みに失敗しました', true);
+    }
+    fileInput.value = '';
+  };
+  r.readAsText(f, 'utf-8');
+});
+
+load();
+</script>
+
+</body>
+</html>
