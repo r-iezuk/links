@@ -361,6 +361,14 @@ function escapeHtml(s) {
 function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function touchGroup(g) { groupRecent[g] = Date.now(); }
 
+/* URLの表記ゆれ（大文字小文字・末尾スラッシュ等）を吸収して正規化する。
+   重複判定はすべてこの関数を通した値同士で比較する。 */
+function normUrl(u) {
+  u = String(u).trim();
+  try { return new URL(u).href; }
+  catch (e) { return u; }
+}
+
 function orderedGroups() {
   const all = [...new Set(entries.map(e => e.group || '未分類'))];
   return all.sort((a, b) => {
@@ -590,6 +598,14 @@ function buildActions(entry) {
     const group = gSel.value === NEW_GROUP_VALUE ? gNew.value.trim() : gSel.value;
     if (!t.value.trim() || !u.value.trim()) { setStatus('タイトルとURLは必須です', true); return; }
     if (!group) { setStatus('グループ名を入力してください', true); return; }
+
+    // 他のエントリと重複していないか確認（自分自身は除外）
+    const dup = entries.find(e => e.id !== entry.id && normUrl(e.url) === normUrl(u.value.trim()));
+    if (dup) {
+      setStatus('このURLは「' + dup.group + '」に登録済みです（' + dup.title + '）', true);
+      return;
+    }
+
     entry.title = t.value.trim();
     entry.group = group;
     entry.url = u.value.trim();
@@ -676,6 +692,13 @@ addBtn.addEventListener('click', () => {
   if (!url || !/^https?:\/\/\S+/.test(url)) { setStatus('URLを正しく入力してください', true); return; }
   if (!title) { setStatus('タイトルを入力してください', true); titleInput.focus(); return; }
   if (!group) { setStatus('グループ名を入力してください', true); newGroupInput.focus(); return; }
+
+  // 既存エントリとURLが重複していないか確認
+  const dup = entries.find(e => normUrl(e.url) === normUrl(url));
+  if (dup) {
+    setStatus('このURLは「' + dup.group + '」に登録済みです（' + dup.title + '）', true);
+    return;
+  }
 
   const maxOrder = Math.max(0, ...entries.filter(e => e.group === group).map(e => e.order ?? 0));
   entries.push({ id: newId(), group, title, url, order: maxOrder + 1 });
@@ -795,8 +818,30 @@ function fromCsv(text) {
   return res;
 }
 
-exportBtn.addEventListener('click', () => {
-  const blob = new Blob(['\ufeff' + toCsv()], { type: 'text/csv;charset=utf-8' });
+exportBtn.addEventListener('click', async () => {
+  const csv = '\ufeff' + toCsv();
+
+  // File System Access API 対応環境（PCのChrome/Edgeなど）では
+  // 保存ダイアログから既存ファイルを選んで上書き保存できる。
+  // iOS Safari など未対応環境では下のフォールバックへ自動的に進む。
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: 'links.csv',
+        types: [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(csv);
+      await writable.close();
+      setStatus('links.csv を保存しました');
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // ユーザーがキャンセルした場合は何もしない
+      // それ以外のエラーは下の従来方式にフォールバック
+    }
+  }
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const u = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = u;
@@ -822,15 +867,23 @@ fileInput.addEventListener('change', () => {
         fileInput.value = '';
         return;
       }
-      let added = 0, updated = 0;
+      let added = 0, updated = 0, skipped = 0;
+      const seenInFile = new Set(); // CSVファイル内での重複URLを検出する
+
       imported.forEach(imp => {
-        const i = entries.findIndex(e => e.url === imp.url && e.group === imp.group);
+        const key = normUrl(imp.url);
+        if (seenInFile.has(key)) { skipped++; return; }
+        seenInFile.add(key);
+
+        // グループに関わらずURLだけで既存エントリと照合する
+        const i = entries.findIndex(e => normUrl(e.url) === key);
         if (i >= 0) { imp.id = entries[i].id; entries[i] = imp; updated++; }
         else { entries.push(imp); added++; }
         touchGroup(imp.group);
       });
       save(); render();
-      setStatus('読み込み完了：追加 ' + added + ' 件 / 更新 ' + updated + ' 件');
+      setStatus('読み込み完了：追加 ' + added + ' 件 / 更新 ' + updated + ' 件' +
+        (skipped ? ' / 重複スキップ ' + skipped + ' 件' : ''));
     } catch (e) {
       setStatus('CSVの読み込みに失敗しました', true);
     }
